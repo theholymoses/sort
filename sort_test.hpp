@@ -3,64 +3,67 @@
 
 #include <iostream>
 #include <random>
+#include <type_traits>
 
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
 
 // -------------------------------------------------------------------------------- RANDOM NUMBERS
-template <class array_element>
-static void
-fill_int_arr (array_element *arr, size_t n, array_element min, array_element max)
-{
-    std::random_device rd;
-    std::mt19937 gen (rd ());
-    std::uniform_int_distribution <array_element> dist(min, max);
+template <typename T>
+constexpr bool always_false = false;
 
-    for (size_t i = 0; i < n; ++i)
-        arr[i] = dist (gen);
-}
-
-template <class array_element>
-static void
-fill_flt_arr (array_element *arr, size_t n, array_element min, array_element max)
+template <typename T>
+static inline T
+rndi (T min_v = std::numeric_limits<T>::min(),
+      T max_v = std::numeric_limits<T>::max())
 {
     static std::random_device rd;
-    static std::mt19937 gen (rd ());
-    static std::uniform_real_distribution <array_element> dist(min, max);
+    static std::mt19937_64 engine(rd());
+    static std::uniform_int_distribution<> d(min_v, max_v);
 
-    for (size_t i = 0; i < n; ++i)
-        arr[i] = dist (gen);
+    return (d(engine));
+}
+
+template <typename T>
+static inline T
+rndf (T min_v = std::numeric_limits<T>::min(),
+      T max_v = std::numeric_limits<T>::max())
+{
+    static std::random_device rd;
+    static std::mt19937_64 engine(rd());
+    static std::uniform_real_distribution<> d(min_v, max_v);
+
+    return (d(engine));
 }
 
 // -------------------------------------------------------------------------------- ARRAY CLASS
 enum array_initial_state
 {
+    AIS_START,
+
     AIS_SORTED_DESC,    // array is sorted backwards before sorting (to imitate the worst case)
     AIS_UNSORTED,       // array is not sorted
-    AIS_SORTED_ASC      // array is sorted (best case)
+    AIS_SORTED_ASC,     // array is sorted (best case)
+
+    AIS_END
 };
 
-const char *array_initial_state_str[] =
-{
-    "sorted backwards",
-    "unsorted",
-    "sorted"
-};
-
-// 'e' stands for count of elements to write at most on the line in the case of debugging
-template <class array_element, size_t n, size_t e>
+template <typename T, size_t n>
 class arr
 {
-private:
-    array_element               a[n];
-    enum array_initial_state    ais;
+    alignas (64) T a[n];
+
+    enum array_initial_state ais;
+    const char *ais_str;
+
+    constexpr static size_t val_per_line = 16;      // value per line to print in debug
 
     int
-    asc (const void *a, const void *b)
+    asc(const void *a, const void *b)
     {
-        array_element va = *(array_element *)a;
-        array_element vb = *(array_element *)b;
+        T va = *(T *)a;
+        T vb = *(T *)b;
 
         if      (va < vb)
             return (-1);
@@ -70,10 +73,10 @@ private:
     }
 
     int
-    desc (const void *a, const void *b)
+    desc(const void *a, const void *b)
     {
-        array_element va = *(array_element *)a;
-        array_element vb = *(array_element *)b;
+        T va = *(T *)a;
+        T vb = *(T *)b;
 
         if      (va > vb)
             return (-1);
@@ -83,65 +86,87 @@ private:
     }
 
 public:
-    arr () { }
-
-    arr (array_element _arr[n], enum array_initial_state _ais)
+    arr()
     {
         for (size_t i = 0; i < n; ++i)
-            a[i] = _arr[i];
+        {
+            if constexpr (std::is_floating_point_v<T>)
+                a[i] = rndf<T>();
+            else if constexpr (std::is_integral_v<T>)
+                a[i] = rndi<T>();
+            else
+                static_assert(always_false<T>, "unsupported type");
+        }
+    }
 
-        ais = _ais;
+    arr(arr<T, n> _a, enum array_initial_state _ais)
+    : ais(_ais)
+    {
+        for (size_t i = 0; i < n; ++i)
+            a[i] = _a[i];
 
         switch (ais)
         {
             case AIS_SORTED_DESC:
-                qsort (a, n, sizeof (array_element), desc);
+                ais_str = "sorted backwards";
                 break;
 
             case AIS_SORTED_ASC:
-                qsort (a, n, sizeof (array_element), asc);
+                ais_str = "sorted";
+                break;
+
+            case AIS_UNSORTED:
+                ais_str = "unsorted";
                 break;
 
             default:
+                ais_str = "unknown";
                 break;
         }
     }
 
-    array_element *
-    get_arr () { return (a); }
+    T&
+    operator[](size_t i) { return a[i]; }
+
+    const T&
+    operator[](size_t i) const { return a[i]; }
+
+    T *
+    get_arr() { return (a); }
 
     size_t
-    get_len () { return (n); }
+    get_len() const { return (n); }
 
     size_t
-    get_sz  () { return (sizeof (array_element)); } 
+    get_sz() const { return (sizeof(T)); } 
 
     enum array_initial_state
-    get_ais () { return (ais); }
+    get_ais() const { return (ais); }
+
+    const char *
+    get_ais_str() const { return (ais_str); }
 
     bool
-    sorted ()
+    sorted() const
     {
         for (size_t i = 0; i < n - 1; ++i)
             if (a[i] > a[i + 1])
                 return (false);
+
         return (true);
     }
 
-
     void
-    print ()
+    print() const
     {
-        assert (e);
-
-        size_t full = n / e;
-        size_t rem  = n % e;
+        size_t full = n / val_per_line;
+        size_t rem  = n % val_per_line;
 
         size_t i = 0;
 
         while (full && i < n)
         {
-            for (size_t j = 0; j < e - 1; ++j)
+            for (size_t j = 0; j < val_per_line - 1; ++j)
                 std::cout << a[i++] << ", ";
             std::cout << a[i++] << "\n";
 
@@ -181,71 +206,172 @@ extern "C"
     typedef int (*cmp) (const void *, const void *);
 };
 
-template <class function>
+template <typename function>
 class alg
 {
 protected:
-    const char  *name;          // algorithm name
-    const char  *specifics;     // additional info about algorithm
-    function    f;              // sorting function
+    const char  *name;
+    const char  *info;
+    function    func_sort;
     double      exec_time;
 
     virtual void
-    call_sort (void *, size_t) = 0;
+    call_sort(const void *, size_t) = 0;
 
 public:
     virtual void
-    sort (void *ptr, size_t n)
+    sort(const void *ptr, size_t n)
     {
         struct timespec b;
         struct timespec e;
 
-        clock_gettime (CLOCK_MONOTONIC_RAW, &b);
-        call_sort (ptr, n);
-        clock_gettime (CLOCK_MONOTONIC_RAW, &e);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &b);
+        call_sort(ptr, n);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &e);
 
         exec_time = (e.tv_nsec - b.tv_nsec) / 1000000000.0 + (e.tv_sec - b.tv_sec);
     }
 
     virtual const char *
-    get_name ()     { return (name); }
+    get_name() const { return (name); }
 
     virtual const char *
-    get_spec ()     { return (specifics); }
+    get_info() const { return (info); }
 
     virtual double
-    get_exec_t ()   { return (exec_time); }
+    get_exec_t() const { return (exec_time); }
 };
 
-class strict_type_sort_alg : protected alg <f_strict_type_sort>
+class strict_type_sort_alg : alg<f_strict_type_sort>
 {
 public:
-    strict_type_sort_alg (const char *_n, const char *_spec, f_strict_type_sort _f)
+    strict_type_sort_alg(const char *_name, const char *_info, f_strict_type_sort _func_sort)
     {
-        name = _n;
-        specifics = _spec;
-        f = _f;
+        name = _name;
+        info = _info;
+        func_sort = _func_sort;
     }
+
     void
-    call_sort (void *ptr, size_t n) override { f (ptr, n); }
+    call_sort(const void *ptr, size_t n) override { func_sort(ptr, n); }
 };
 
-class generic_type_sort_alg : protected alg <f_generic_type_sort>
+class generic_type_sort_alg : alg<f_generic_type_sort>
 {
-private:
-    size_t s; // size of element in bytes
-    cmp    c; // compare function
+    size_t size;
+    cmp    func_cmp;
+
 public:
-    generic_type_sort_alg (const char *_n, const char *_spec, size_t _s, f_generic_type_sort _f, cmp _c)
+    generic_type_sort_alg(const char *_name, const char *_info, size_t _size, f_generic_type_sort _func_sort, cmp _func_cmp)
     {
-        name = _n;
-        specifics = _spec;
-        s = _s;
-        f = _f;
-        c = _c;
+        name = _name;
+        info = _info;
+        size = _size;
+        func_sort = _func_sort;
+        func_cmp  = _func_cmp;
     }
+
     void
-    call_sort (void *ptr, size_t n) override { f (ptr, n, s, c); }
+    call_sort(const void *ptr, size_t n) override { func_sort(ptr, n, size, func_cmp); }
+};
+
+// -------------------------------------------------------------------------------- REPORT CLASS
+struct sort_report
+{
+    const char  *algorithm_name;
+    const char  *info;
+    const char  *ais_str;
+    size_t      len;
+    size_t      size;
+    double      exec_time;
+
+    enum array_initial_state ais;
+
+    sort_report(auto &al, auto &ar)
+    {
+        algorithm_name  = al.get_name();
+        info            = al.get_info();
+        ais_str         = ar.get_ais_str();
+        len             = ar.get_len();
+        size            = ar.get_size();
+        exec_time       = ar.get_exec_time();
+    }
+
+    void
+    print() const
+    {
+        printf("| %-15s (%-30s) | %-15s | %5zu | %5zu | | %-9.6f |\n",
+                algorithm_name,
+                info,
+                ais_str,
+                len,
+                size,
+                exec_time);
+    }
+
+    inline bool
+    operator==(const sort_report& r)
+    {
+        if      (ais == r.ais)
+            return (true);
+        else if (len == r.len)
+            return (true);
+        else if (size == r.size)
+            return (true);
+        else if (exec_time == r.exec_time)
+            return (true);
+
+        return (false);
+    }
+
+    inline bool
+    operator<(const sort_report& r)
+    {
+        if      (ais < r.ais)
+            return (true);
+        else if (ais > r.ais)
+            return (false);
+
+        else if (len < r.len)
+            return (true);
+        else if (len > r.len)
+            return (false);
+
+        else if (size < r.size)
+            return (true);
+        else if (size > r.size)
+            return (false);
+
+        else if (exec_time < r.exec_time)
+            return (true);
+
+        return (false);
+    }
+
+    inline bool
+    operator!=(const sort_report& r)
+    {
+        return !(*this == r);
+    }
+
+    inline bool
+    operator>(const sort_report& r)
+    {
+        return !(*this < r);
+    }
+
+    inline bool
+    operator>=(const sort_report& r)
+    {
+        return (*this == r || *this > r);
+    }
+
+    inline bool
+    operator<=(const sort_report& r)
+    {
+        return (*this == r || *this < r);
+    }
+
 };
 
 #endif // SORT_TEST_HPP

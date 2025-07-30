@@ -5,10 +5,10 @@ src_test = sort_test.cpp
 hdr_test = sort_test.hpp
 exe_test = sort_test
 
-fcpp = -std=c++20 -pedantic -Wall -Wextra -Werror
+fcpp = -std=c++20 -pedantic -Wall -Wextra -Werror -fsanitize=undefined
 clck = -D_POSIX_C_SOURCE=199309L
 
-$(exe_test): $(src_test) $(hdr_test)
+$(exe_test): $(src_test) $(hdr_test) $(obj_sort)
 	g++ $(clck) $(fcpp) $^ -o $@
 
 $(obj_sort): $(src_sort)
