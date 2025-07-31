@@ -39,13 +39,16 @@ random_value (T min_v = std::numeric_limits<T>::min(),
 }
 
 // --------------------------------------------------------------------------------
+// В какоe состояниe привести массив перед тестированием сортировки(от лучшего к худшему):
 enum array_initial_state
 {
-    AIS_SORTED_ASC,
-    AIS_UNSORTED,
-    AIS_SORTED_DESC
+    AIS_SORTED_ASC,         // массив отсортирован
+    AIS_UNSORTED,           // массив не отсортирован
+    AIS_SORTED_DESC         // массив отсортирован в обратном порядке
 };
 
+// Сколько значений массива вывести на одной строке так, чтобы это было читаемо
+// (опираясь на размер в байтах, подразумевая, что T - число)
 template <typename T>
 constexpr size_t
 get_val_per_line()
@@ -60,6 +63,8 @@ get_val_per_line()
         return (16);
 }
 
+// Сколько байт в выводе на экран будет занимать одно число
+// (опираясь на размер в байтах, подразумевая, что T - число)
 template <typename T>
 constexpr size_t
 get_val_width()
@@ -85,6 +90,7 @@ class test_array
     constexpr static size_t val_width = get_val_width<T>();
 
 public:
+    // 1) Создаётся массив, заполняется случайными значениями и приводится в указанное состояние
     test_array(enum array_initial_state _ais = AIS_UNSORTED)
     :ais(_ais)
     {
@@ -113,6 +119,8 @@ public:
         }
     }
 
+    // 2) Берётся массив, созданный предыдущим конструктором, копируется и далее сортируется
+    // (чтобы проверять разные сортировки на идентичном массиве)
     test_array(test_array<T, n>& t)
     :ais (t.get_ais()), ais_str(t.get_ais_str())
     {
@@ -175,21 +183,22 @@ public:
 // --------------------------------------------------------------------------------
 extern "C"
 {
-    // sorting algorithm function, that works on specific type
-    // args:
-    //  1) addr
-    //  2) N
+    // функция-компаратор, идентичная тому, что принимает qsort из stdlib
+    typedef int (*f_cmp) (const void *, const void*);
+
+    // Функция сортировки, реализованная под конкретный тип (тип будет конкретизирован далее)
+    // Аргументы:
+    //  1) указатель на сортируемый массив
+    //  2) кол-во элементов
     typedef void (*f_sort_strict)(void *, size_t);
 
-    // sorting algorithm function, that works on any type and sorts depending on passed compare function
-    // args:
-    //  1) addr
-    //  2) N
-    //  3) size of single element in bytes
-    //  4) compare function (exactly the same as C's qsort comparator)
-    typedef void (*f_sort_generic)(void *, size_t, size_t, int (*)(const void*, const void*));
+    // Функция сортировки, способная сортировать любой массив любых данных
+    //  1) указатель на сортируемый массив
+    //  2) кол-во элементов
+    //  3) размер одного элемента в байтах
+    //  4) функция-компаратор
+    typedef void (*f_sort_generic)(void *, size_t, size_t, f_cmp c);
 
-    typedef int (*f_cmp) (const void *, const void*);
 }
 
 #endif // SORT_TEST_HPP
